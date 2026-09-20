@@ -27,15 +27,17 @@ const jobs = {};
 // Obtener marca de tiempo formateada para logs
 const getTimestamp = () => new Date().toLocaleTimeString();
 
-// Descarga e instalación automática de yt-dlp según el entorno
+// Descarga e instalación automática de yt-dlp según el entorno (Usando Nightly Builds)
 function ensureYtDlp() {
     return new Promise((resolve, reject) => {
         if (fs.existsSync(ytdlpPath)) return resolve();
 
         console.log(
-            `[${getTimestamp()}] 📥 Descargando ejecutable oficial de yt-dlp (${ytdlpBinary})...`,
+            `[${getTimestamp()}] 📥 Descargando ejecutable oficial nightly de yt-dlp (${ytdlpBinary})...`,
         );
-        const url = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${ytdlpBinary}`;
+
+        // CAMBIO 1: Uso de yt-dlp-nightly-builds para parches diarios
+        const url = `https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/${ytdlpBinary}`;
 
         const downloadFile = (fileUrl) => {
             https
@@ -49,7 +51,7 @@ function ensureYtDlp() {
                         fileStream.close();
                         if (!isWin) fs.chmodSync(ytdlpPath, '755'); // Permisos de ejecución en Linux
                         console.log(
-                            `[${getTimestamp()}] ✅ yt-dlp instalado y listo.`,
+                            `[${getTimestamp()}] ✅ yt-dlp (nightly) instalado y listo.`,
                         );
                         resolve();
                     });
@@ -116,6 +118,9 @@ app.post('/api/download', async (req, res) => {
         ffmpegPath,
         '--newline',
         '--no-playlist',
+        // CAMBIO 2: Evita bloqueos de player en Render usando cliente móvil android
+        '--extractor-args',
+        'youtube:player_client=android,mweb',
     ];
 
     if (format === 'mp3') {
