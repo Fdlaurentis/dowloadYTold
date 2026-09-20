@@ -121,11 +121,8 @@ app.post('/api/download', async (req, res) => {
         ffmpegPath,
         '--newline',
         '--no-playlist',
-        // CAMBIO 2: Extraer con cliente de iOS y User-Agent móvil
         '--extractor-args',
-        'youtube:player_client=ios,mweb',
-        '--user-agent',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'youtube:player_client=mweb,tv_embedded,android,ios',
     ];
 
     if (format === 'mp3') {
@@ -146,14 +143,14 @@ app.post('/api/download', async (req, res) => {
 
         args.push(
             '-f',
-            `bestvideo[height<=${targetRes}][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=${targetRes}]+bestaudio/best[height<=${targetRes}]`,
+            `b[height<=${targetRes}][ext=mp4]/bestvideo[height<=${targetRes}]+bestaudio/best[height<=${targetRes}]/best`,
             '--merge-output-format',
             'mp4',
             '--postprocessor-args',
             'VideoConvertor:-c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 128k',
             '-o',
             outputTemplate,
-            cleanUrl, // CAMBIO 3: Usamos cleanUrl
+            cleanUrl,
         );
     }
 
