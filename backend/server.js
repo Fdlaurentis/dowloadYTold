@@ -27,7 +27,7 @@ const jobs = {};
 // Obtener marca de tiempo formateada para logs
 const getTimestamp = () => new Date().toLocaleTimeString();
 
-// Descarga e instalación automática de yt-dlp (Usando Nightly Builds)
+// Descarga e instalación automática de yt-dlp (Nightly)
 function ensureYtDlp() {
     return new Promise((resolve, reject) => {
         if (fs.existsSync(ytdlpPath)) return resolve();
@@ -71,7 +71,7 @@ app.get('/', (req, res) => {
 app.post('/api/download', async (req, res) => {
     const { url, format, resolution = '480' } = req.body;
 
-    // CAMBIO 1: Limpiar la URL de parámetros extra (listas de reproducción, etc.)
+    // Limpiar la URL de parámetros extra (listas de reproducción)
     const cleanUrl = url ? url.split('&')[0] : '';
 
     console.log(`\n==================================================`);
@@ -115,7 +115,7 @@ app.post('/api/download', async (req, res) => {
 
     console.log(`[${getTimestamp()}] 🆔 ID de Trabajo generado: ${jobId}`);
 
-    // Configuración de argumentos
+    // Configuración de argumentos base
     const args = [
         '--ffmpeg-location',
         ffmpegPath,
@@ -124,6 +124,14 @@ app.post('/api/download', async (req, res) => {
         '--extractor-args',
         'youtube:player_client=mweb,tv_embedded,android,ios',
     ];
+
+    // INYECCIÓN DEL PROXY (Lee la variable de entorno configurada en Render)
+    if (process.env.PROXY_URL) {
+        console.log(
+            `[${getTimestamp()}] 🛡️ Usando Proxy para evadir bloqueo...`,
+        );
+        args.push('--proxy', process.env.PROXY_URL);
+    }
 
     if (format === 'mp3') {
         args.push(
@@ -134,7 +142,7 @@ app.post('/api/download', async (req, res) => {
             '0',
             '-o',
             outputTemplate,
-            cleanUrl, // CAMBIO 3: Usamos cleanUrl
+            cleanUrl,
         );
     } else {
         const targetRes = ['360', '480', '720'].includes(resolution)
