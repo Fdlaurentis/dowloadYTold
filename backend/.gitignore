@@ -1,0 +1,8 @@
+node_modules/
+downloads/
+yt-dlp
+yt-dlp.exe
+*.mp4
+*.mp3
+*.tmp
+.env
