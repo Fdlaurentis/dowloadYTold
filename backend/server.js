@@ -27,7 +27,7 @@ const jobs = {};
 // Obtener marca de tiempo formateada para logs
 const getTimestamp = () => new Date().toLocaleTimeString();
 
-// Descarga e instalación automática de yt-dlp según el entorno (Usando Nightly Builds)
+// Descarga e instalación automática de yt-dlp (Usando Nightly Builds)
 function ensureYtDlp() {
     return new Promise((resolve, reject) => {
         if (fs.existsSync(ytdlpPath)) return resolve();
@@ -36,7 +36,6 @@ function ensureYtDlp() {
             `[${getTimestamp()}] 📥 Descargando ejecutable oficial nightly de yt-dlp (${ytdlpBinary})...`,
         );
 
-        // CAMBIO 1: Uso de yt-dlp-nightly-builds para parches diarios
         const url = `https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/${ytdlpBinary}`;
 
         const downloadFile = (fileUrl) => {
@@ -72,14 +71,18 @@ app.get('/', (req, res) => {
 app.post('/api/download', async (req, res) => {
     const { url, format, resolution = '480' } = req.body;
 
+    // CAMBIO 1: Limpiar la URL de parámetros extra (listas de reproducción, etc.)
+    const cleanUrl = url ? url.split('&')[0] : '';
+
     console.log(`\n==================================================`);
     console.log(`[${getTimestamp()}] 🚀 NUEVA SOLICITUD RECIBIDA`);
-    console.log(` -> URL: ${url}`);
+    console.log(` -> URL Original: ${url}`);
+    console.log(` -> URL Limpia: ${cleanUrl}`);
     console.log(` -> Formato: ${format.toUpperCase()}`);
     if (format !== 'mp3') console.log(` -> Resolución Máxima: ${resolution}p`);
     console.log(`==================================================`);
 
-    if (!url) {
+    if (!cleanUrl) {
         console.log(`[${getTimestamp()}] ❌ Rechazado: URL vacía`);
         return res
             .status(400)
@@ -118,9 +121,11 @@ app.post('/api/download', async (req, res) => {
         ffmpegPath,
         '--newline',
         '--no-playlist',
-        // CAMBIO 2: Evita bloqueos de player en Render usando cliente móvil android
+        // CAMBIO 2: Extraer con cliente de iOS y User-Agent móvil
         '--extractor-args',
-        'youtube:player_client=android,mweb',
+        'youtube:player_client=ios,mweb',
+        '--user-agent',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
     ];
 
     if (format === 'mp3') {
@@ -132,7 +137,7 @@ app.post('/api/download', async (req, res) => {
             '0',
             '-o',
             outputTemplate,
-            url,
+            cleanUrl, // CAMBIO 3: Usamos cleanUrl
         );
     } else {
         const targetRes = ['360', '480', '720'].includes(resolution)
@@ -148,7 +153,7 @@ app.post('/api/download', async (req, res) => {
             'VideoConvertor:-c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 128k',
             '-o',
             outputTemplate,
-            url,
+            cleanUrl, // CAMBIO 3: Usamos cleanUrl
         );
     }
 
