@@ -19,8 +19,63 @@ app.use(express.json());
 
 const jobs = {};
 
-// Iniciar limpiador en segundo plano
+// Iniciar limpiador automático
 startAutoCleaner();
+
+// Función para sanitizar URLs de YouTube de forma estricta
+function sanitizeYoutubeUrl(rawUrl) {
+    try {
+        const parsed = new URL(rawUrl.trim());
+
+        // Caso 1: URL corta (youtu.be/ID)
+        if (parsed.hostname.includes('youtu.be')) {
+            const videoId = parsed.pathname.slice(1).split('/')[0];
+            if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+        }
+
+        // Caso 2: URL estándar (youtube.com/watch?v=ID)
+        const videoId = parsed.searchParams.get('v');
+        if (videoId) {
+            return `https://www.youtube.com/watch?v=${videoId}`;
+        }
+    } catch (e) {
+        // Si no es un objeto URL válido, intentar fallback básico
+    }
+    return rawUrl ? rawUrl.split('&')[0] : '';
+}
+
+// Clasificador de errores de yt-dlp
+function parseYtDlpError(rawErrorLog) {
+    const log = rawErrorLog.toLowerCase();
+
+    if (
+        log.includes("confirm you're not a bot") ||
+        log.includes('bot') ||
+        log.includes('429') ||
+        log.includes('sign in')
+    ) {
+        return '🔒 Bloqueo de YouTube: La plataforma detectó tráfico inusual. Intenta de nuevo en unos minutos.';
+    }
+    if (
+        log.includes('proxy') ||
+        log.includes('connection') ||
+        log.includes('timed out') ||
+        log.includes('econnrefused') ||
+        log.includes('unable to download webpage')
+    ) {
+        return '🌐 Error de Conexión: Falla de comunicación con el proxy o con los servidores de YouTube.';
+    }
+    if (
+        log.includes('private video') ||
+        log.includes('unavailable') ||
+        log.includes('copyright') ||
+        log.includes('members-only')
+    ) {
+        return '🚫 Video no disponible: El video es privado, fue borrado o requiere membresía.';
+    }
+
+    return '❌ Error al procesar el video: No se pudo completar la conversión.';
+}
 
 app.get('/', (req, res) => {
     res.send('Servidor Backend H.264 Downloader activo.');
@@ -28,18 +83,19 @@ app.get('/', (req, res) => {
 
 app.post('/api/download', async (req, res) => {
     const { url, format, resolution = '480' } = req.body;
-    const cleanUrl = url ? url.split('&')[0] : '';
+    const cleanUrl = sanitizeYoutubeUrl(url);
 
     console.log(`\n==================================================`);
     console.log(`[${getTimestamp()}] 🚀 NUEVA SOLICITUD RECIBIDA`);
-    console.log(` -> URL Limpia: ${cleanUrl}`);
-    console.log(` -> Formato: ${format.toUpperCase()}`);
+    console.log(` -> URL Original: ${url}`);
+    console.log(` -> URL Sanitizada: ${cleanUrl}`);
+    console.log(` -> Formato: ${format ? format.toUpperCase() : 'MP4'}`);
     console.log(`==================================================`);
 
-    if (!cleanUrl) {
+    if (!cleanUrl || !cleanUrl.includes('youtube.com/watch?v=')) {
         return res
             .status(400)
-            .json({ error: 'Ingresa una URL válida de YouTube' });
+            .json({ error: 'Ingresa un enlace válido de video de YouTube.' });
     }
 
     try {
@@ -64,6 +120,8 @@ app.post('/api/download', async (req, res) => {
         status: 'Iniciando...',
         fileReady: false,
         ext,
+        errorLog: '',
+        errorMessage: '',
     };
 
     const args = [
@@ -118,7 +176,9 @@ app.post('/api/download', async (req, res) => {
             `[${getTimestamp()}] [Job ${jobId}] 💥 Error en proceso hijo:`,
             err,
         );
-        jobs[jobId].status = 'Error al ejecutar el proceso de descarga';
+        jobs[jobId].status = 'Error de ejecución en el servidor';
+        jobs[jobId].errorMessage =
+            '🌐 Error de Conexión: Falla interna al ejecutar el proceso.';
         jobs[jobId].error = true;
     });
 
@@ -139,6 +199,13 @@ app.post('/api/download', async (req, res) => {
         }
     });
 
+    childProcess.stderr.on('data', (data) => {
+        const logLine = data.toString().trim();
+        if (logLine) {
+            jobs[jobId].errorLog += ' ' + logLine;
+        }
+    });
+
     childProcess.on('close', (code) => {
         const files = fs.readdirSync(downloadsDir);
         const downloadedFile = files.find((file) => file.startsWith(jobId));
@@ -153,10 +220,13 @@ app.post('/api/download', async (req, res) => {
             jobs[jobId].outputPath = path.join(downloadsDir, downloadedFile);
             jobs[jobId].downloadName = downloadedFile.replace(`${jobId}_`, '');
         } else {
+            const parsedError = parseYtDlpError(jobs[jobId].errorLog);
             console.error(
-                `[${getTimestamp()}] [Job ${jobId}] ❌ Error. Código: ${code}`,
+                `[${getTimestamp()}] [Job ${jobId}] ❌ Error (${code}): ${parsedError}`,
             );
-            jobs[jobId].status = 'Error durante el procesamiento';
+
+            jobs[jobId].status = 'Error en el proceso';
+            jobs[jobId].errorMessage = parsedError;
             jobs[jobId].error = true;
         }
     });

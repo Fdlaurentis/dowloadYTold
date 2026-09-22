@@ -22,7 +22,7 @@ export default function App() {
 
     const showAlert = (title, message) => {
         if (Platform.OS === 'web') {
-            window.alert(`${title}: ${message}`);
+            window.alert(`${title}\n\n${message}`);
         } else {
             Alert.alert(title, message);
         }
@@ -30,7 +30,10 @@ export default function App() {
 
     const handleDownload = async () => {
         if (!url.trim()) {
-            showAlert('Error', 'Por favor ingresa una URL válida de YouTube.');
+            showAlert(
+                'Campo Requerido',
+                'Por favor ingresa una URL válida de YouTube.',
+            );
             return;
         }
 
@@ -53,7 +56,7 @@ export default function App() {
 
             if (!response.ok || data.error) {
                 throw new Error(
-                    data.error || 'Ocurrió un error al procesar el video.',
+                    data.error || 'Ocurrió un error al procesar la solicitud.',
                 );
             }
 
@@ -61,7 +64,7 @@ export default function App() {
         } catch (error) {
             console.error('Error al iniciar descarga:', error);
             showAlert(
-                'Error',
+                'Error de Solicitud',
                 error.message || 'No se pudo conectar con el servidor.',
             );
             setLoading(false);
@@ -80,21 +83,24 @@ export default function App() {
 
                     if (jobData.fileReady) {
                         clearInterval(interval);
-                        setStatusText('¡Completado! Descargando archivo...');
+                        setStatusText('¡Completado! Transfiriendo archivo...');
                         triggerFileDownload(jobId);
                     } else if (jobData.error) {
                         clearInterval(interval);
-                        showAlert(
-                            'Error',
-                            'Ocurrió un error al procesar el video.',
-                        );
+                        const errorMsg =
+                            jobData.errorMessage ||
+                            'Ocurrió un error inesperado al procesar el video.';
+                        showAlert('Falla en la Descarga', errorMsg);
                         setLoading(false);
                     }
                 }
             } catch (err) {
                 console.error('Error consultando progreso:', err);
                 clearInterval(interval);
-                showAlert('Error', 'Error de conexión durante el seguimiento.');
+                showAlert(
+                    'Error de Red',
+                    'Se perdió la conexión con el servidor durante el proceso.',
+                );
                 setLoading(false);
             }
         }, 1000);
@@ -110,8 +116,17 @@ export default function App() {
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+
+            // Alerta emergente de éxito
+            showAlert(
+                '🎉 ¡Descarga Exitosa!',
+                'El archivo procesado ha comenzado a descargarse en tu navegador.',
+            );
         } else {
-            showAlert('Listo', `Descarga lista en: ${fileUrl}`);
+            showAlert(
+                '🎉 ¡Descarga Lista!',
+                `Tu archivo está listo para descargar en:\n${fileUrl}`,
+            );
         }
 
         setTimeout(() => {
