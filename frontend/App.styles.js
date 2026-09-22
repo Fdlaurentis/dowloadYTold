@@ -169,4 +169,66 @@ export const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
     },
+    // --- ESTILOS DEL MODAL DE ALERTA PERSONALIZADA ---
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalCard: {
+        width: '100%',
+        maxWidth: 400,
+        backgroundColor: '#111827',
+        borderRadius: 16,
+        padding: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#1f2937',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.5,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    modalIcon: {
+        fontSize: 44,
+        marginBottom: 12,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#ffffff',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    modalMessage: {
+        fontSize: 14,
+        color: '#94a3b8',
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 22,
+    },
+    modalButton: {
+        width: '100%',
+        height: 46,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalButtonSuccess: {
+        backgroundColor: '#10b981',
+    },
+    modalButtonError: {
+        backgroundColor: '#e11d48',
+    },
+    modalButtonInfo: {
+        backgroundColor: '#2563eb',
+    },
+    modalButtonText: {
+        color: '#ffffff',
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
 });

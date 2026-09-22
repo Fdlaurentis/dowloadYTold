@@ -4,8 +4,8 @@ import {
     View,
     TextInput,
     TouchableOpacity,
-    Alert,
     Platform,
+    Modal,
 } from 'react-native';
 import { styles } from './App.styles';
 
@@ -20,12 +20,20 @@ export default function App() {
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
 
-    const showAlert = (title, message) => {
-        if (Platform.OS === 'web') {
-            window.alert(`${title}\n\n${message}`);
-        } else {
-            Alert.alert(title, message);
-        }
+    // Estado para la Alerta Personalizada (SweetAlert Style)
+    const [alertConfig, setAlertConfig] = useState({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info', // 'success' | 'error' | 'info'
+    });
+
+    const showAlert = (title, message, type = 'info') => {
+        setAlertConfig({ visible: true, title, message, type });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig((prev) => ({ ...prev, visible: false }));
     };
 
     const handleDownload = async () => {
@@ -33,6 +41,7 @@ export default function App() {
             showAlert(
                 'Campo Requerido',
                 'Por favor ingresa una URL válida de YouTube.',
+                'info',
             );
             return;
         }
@@ -66,6 +75,7 @@ export default function App() {
             showAlert(
                 'Error de Solicitud',
                 error.message || 'No se pudo conectar con el servidor.',
+                'error',
             );
             setLoading(false);
         }
@@ -90,7 +100,7 @@ export default function App() {
                         const errorMsg =
                             jobData.errorMessage ||
                             'Ocurrió un error inesperado al procesar el video.';
-                        showAlert('Falla en la Descarga', errorMsg);
+                        showAlert('Falla en la Descarga', errorMsg, 'error');
                         setLoading(false);
                     }
                 }
@@ -100,6 +110,7 @@ export default function App() {
                 showAlert(
                     'Error de Red',
                     'Se perdió la conexión con el servidor durante el proceso.',
+                    'error',
                 );
                 setLoading(false);
             }
@@ -117,23 +128,50 @@ export default function App() {
             a.click();
             document.body.removeChild(a);
 
-            // Alerta emergente de éxito
             showAlert(
-                '🎉 ¡Descarga Exitosa!',
+                '¡Descarga Exitosa!',
                 'El archivo procesado ha comenzado a descargarse en tu navegador.',
+                'success',
             );
         } else {
             showAlert(
-                '🎉 ¡Descarga Lista!',
+                '¡Descarga Lista!',
                 `Tu archivo está listo para descargar en:\n${fileUrl}`,
+                'success',
             );
         }
 
+        // Limpieza de estado y borrado de URL
         setTimeout(() => {
             setLoading(false);
             setProgress(0);
             setStatusText('');
-        }, 2000);
+            setUrl(''); // 🧹 Limpia la URL del Input
+        }, 1500);
+    };
+
+    // Determinar icono según el tipo de alerta
+    const getAlertIcon = () => {
+        switch (alertConfig.type) {
+            case 'success':
+                return '🎉';
+            case 'error':
+                return '⚠️';
+            default:
+                return 'ℹ️';
+        }
+    };
+
+    // Determinar estilo de botón según tipo
+    const getButtonStyle = () => {
+        switch (alertConfig.type) {
+            case 'success':
+                return styles.modalButtonSuccess;
+            case 'error':
+                return styles.modalButtonError;
+            default:
+                return styles.modalButtonInfo;
+        }
     };
 
     return (
@@ -266,6 +304,34 @@ export default function App() {
                     </Text>
                 </TouchableOpacity>
             </View>
+
+            {/* MODAL DE ALERTA PERSONALIZADA (ALERT2 STYLE) */}
+            <Modal
+                visible={alertConfig.visible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={hideAlert}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalIcon}>{getAlertIcon()}</Text>
+                        <Text style={styles.modalTitle}>
+                            {alertConfig.title}
+                        </Text>
+                        <Text style={styles.modalMessage}>
+                            {alertConfig.message}
+                        </Text>
+                        <TouchableOpacity
+                            style={[styles.modalButton, getButtonStyle()]}
+                            onPress={hideAlert}
+                        >
+                            <Text style={styles.modalButtonText}>
+                                Entendido
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
