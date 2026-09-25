@@ -141,6 +141,14 @@ app.post('/api/download', async (req, res) => {
         args.push('--proxy', formattedProxy);
     }
 
+    const cookiesPath = path.join(__dirname, 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+        console.log(
+            `[${getTimestamp()}] 🍪 Usando archivo de cookies de sesión...`,
+        );
+        args.push('--cookies', cookiesPath);
+    }
+
     if (format === 'mp3') {
         args.push(
             '-x',
