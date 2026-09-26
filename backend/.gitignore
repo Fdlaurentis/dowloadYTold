@@ -6,3 +6,5 @@ yt-dlp.exe
 *.mp3
 *.tmp
 .env
+cookies.txt
+backend/cookies.txt

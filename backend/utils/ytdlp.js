@@ -9,8 +9,30 @@ if (!fs.existsSync(downloadsDir))
 const isWin = process.platform === 'win32';
 const ytdlpBinary = isWin ? 'yt-dlp.exe' : 'yt-dlp';
 const ytdlpPath = path.join(__dirname, '..', ytdlpBinary);
+const cookiesPath = path.join(__dirname, '..', 'cookies.txt');
 
 const getTimestamp = () => new Date().toLocaleTimeString();
+
+// Generar cookies.txt dinámicamente desde variable de entorno
+function ensureCookies() {
+    if (process.env.COOKIES_DATA) {
+        try {
+            fs.writeFileSync(
+                cookiesPath,
+                process.env.COOKIES_DATA.trim(),
+                'utf8',
+            );
+            console.log(
+                `[${getTimestamp()}] 🍪 Archivo cookies.txt generado desde variable de entorno.`,
+            );
+        } catch (err) {
+            console.error(
+                `[${getTimestamp()}] ❌ Error creando cookies.txt:`,
+                err,
+            );
+        }
+    }
+}
 
 function ensureYtDlp() {
     return new Promise((resolve, reject) => {
@@ -45,7 +67,6 @@ function ensureYtDlp() {
     });
 }
 
-// Rutina periódica para eliminar descargas huérfanas (> 15 min)
 function startAutoCleaner() {
     setInterval(
         () => {
@@ -75,6 +96,7 @@ function startAutoCleaner() {
 
 module.exports = {
     ensureYtDlp,
+    ensureCookies,
     ytdlpPath,
     downloadsDir,
     getTimestamp,

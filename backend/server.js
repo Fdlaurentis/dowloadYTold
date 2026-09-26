@@ -6,6 +6,7 @@ const fs = require('fs');
 const ffmpegPath = require('ffmpeg-static');
 const {
     ensureYtDlp,
+    ensureCookies,
     ytdlpPath,
     downloadsDir,
     getTimestamp,
@@ -19,8 +20,9 @@ app.use(express.json());
 
 const jobs = {};
 
-// Iniciar limpiador automático
+// Iniciar limpiador automático de descargas y cargar cookies desde la variable de entorno
 startAutoCleaner();
+ensureCookies();
 
 // Función para sanitizar URLs de YouTube de forma estricta
 function sanitizeYoutubeUrl(rawUrl) {
@@ -39,12 +41,12 @@ function sanitizeYoutubeUrl(rawUrl) {
             return `https://www.youtube.com/watch?v=${videoId}`;
         }
     } catch (e) {
-        // Si no es un objeto URL válido, intentar fallback básico
+        // Fallback si no es un formato parseable
     }
     return rawUrl ? rawUrl.split('&')[0] : '';
 }
 
-// Clasificador de errores de yt-dlp
+// Clasificador de errores de yt-dlp para alertas amigables
 function parseYtDlpError(rawErrorLog) {
     const log = rawErrorLog.toLowerCase();
 
@@ -100,9 +102,10 @@ app.post('/api/download', async (req, res) => {
 
     try {
         await ensureYtDlp();
+        ensureCookies(); // Re-verificar que las cookies estén generadas antes de descargar
     } catch (err) {
         console.error(
-            `[${getTimestamp()}] ❌ Error inicializando yt-dlp:`,
+            `[${getTimestamp()}] ❌ Error inicializando yt-dlp/cookies:`,
             err,
         );
         return res.status(500).json({ error: 'Error interno en el servidor' });
@@ -130,9 +133,10 @@ app.post('/api/download', async (req, res) => {
         '--newline',
         '--no-playlist',
         '--extractor-args',
-        'youtube:player_client=mweb,tv_embedded,android,ios',
+        'youtube:player_client=android_vr,web,mweb',
     ];
 
+    // Inyectar Proxy de Webshare si existe la variable
     if (process.env.PROXY_URL) {
         const formattedProxy = process.env.PROXY_URL.trim();
         console.log(
@@ -141,6 +145,7 @@ app.post('/api/download', async (req, res) => {
         args.push('--proxy', formattedProxy);
     }
 
+    // Inyectar Cookies de sesión si existe el archivo generado
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         console.log(
@@ -211,6 +216,9 @@ app.post('/api/download', async (req, res) => {
         const logLine = data.toString().trim();
         if (logLine) {
             jobs[jobId].errorLog += ' ' + logLine;
+            console.log(
+                `[${getTimestamp()}] [Job ${jobId}] ⚠️ Details: ${logLine}`,
+            );
         }
     });
 
