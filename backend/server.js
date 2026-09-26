@@ -133,7 +133,7 @@ app.post('/api/download', async (req, res) => {
         '--newline',
         '--no-playlist',
         '--extractor-args',
-        'youtube:player_client=android_vr,web,mweb',
+        'youtube:player_client=ios,android,web',
     ];
 
     // Inyectar Proxy de Webshare si existe la variable
