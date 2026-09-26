@@ -129,7 +129,7 @@ app.post('/api/download', async (req, res) => {
         '--newline',
         '--no-playlist',
         '--extractor-args',
-        'youtube:player_client=tv_embedded,mweb,web',
+        'youtube:player_client=tv,web',
     ];
 
     if (process.env.PROXY_URL) {
