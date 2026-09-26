@@ -132,8 +132,9 @@ app.post('/api/download', async (req, res) => {
         ffmpegPath,
         '--newline',
         '--no-playlist',
+        // Clientes compatibles con cookies de sesión y autenticación
         '--extractor-args',
-        'youtube:player_client=ios,android,tv',
+        'youtube:player_client=tv_embedded,mweb,web',
     ];
 
     // Inyectar Proxy de Webshare si existe la variable
@@ -145,14 +146,14 @@ app.post('/api/download', async (req, res) => {
         args.push('--proxy', formattedProxy);
     }
 
-    /*Inyectar Cookies de sesión si existe el archivo generado
+    // Reactivar inyección de Cookies desde el archivo generado por la variable de entorno
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         console.log(
             `[${getTimestamp()}] 🍪 Usando archivo de cookies de sesión...`,
         );
         args.push('--cookies', cookiesPath);
-    }*/
+    }
 
     if (format === 'mp3') {
         args.push(
@@ -248,7 +249,7 @@ app.post('/api/download', async (req, res) => {
     });
 
     res.json({ jobId });
-});
+};);
 
 app.get('/api/progress/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
