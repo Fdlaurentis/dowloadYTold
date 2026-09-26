@@ -20,33 +20,29 @@ app.use(express.json());
 
 const jobs = {};
 
-// Iniciar limpiador automático de descargas y cargar cookies desde la variable de entorno
+// Iniciar limpiador automático y generar cookies desde variable de entorno
 startAutoCleaner();
 ensureCookies();
 
-// Función para sanitizar URLs de YouTube de forma estricta
+// Sanitizador estricto de URLs de YouTube
 function sanitizeYoutubeUrl(rawUrl) {
     try {
         const parsed = new URL(rawUrl.trim());
-
-        // Caso 1: URL corta (youtu.be/ID)
         if (parsed.hostname.includes('youtu.be')) {
             const videoId = parsed.pathname.slice(1).split('/')[0];
             if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
         }
-
-        // Caso 2: URL estándar (youtube.com/watch?v=ID)
         const videoId = parsed.searchParams.get('v');
         if (videoId) {
             return `https://www.youtube.com/watch?v=${videoId}`;
         }
     } catch (e) {
-        // Fallback si no es un formato parseable
+        // Fallback
     }
     return rawUrl ? rawUrl.split('&')[0] : '';
 }
 
-// Clasificador de errores de yt-dlp para alertas amigables
+// Clasificador de errores
 function parseYtDlpError(rawErrorLog) {
     const log = rawErrorLog.toLowerCase();
 
@@ -102,7 +98,7 @@ app.post('/api/download', async (req, res) => {
 
     try {
         await ensureYtDlp();
-        ensureCookies(); // Re-verificar que las cookies estén generadas antes de descargar
+        ensureCookies();
     } catch (err) {
         console.error(
             `[${getTimestamp()}] ❌ Error inicializando yt-dlp/cookies:`,
@@ -132,12 +128,10 @@ app.post('/api/download', async (req, res) => {
         ffmpegPath,
         '--newline',
         '--no-playlist',
-        // Clientes compatibles con cookies de sesión y autenticación
         '--extractor-args',
         'youtube:player_client=tv_embedded,mweb,web',
     ];
 
-    // Inyectar Proxy de Webshare si existe la variable
     if (process.env.PROXY_URL) {
         const formattedProxy = process.env.PROXY_URL.trim();
         console.log(
@@ -146,7 +140,6 @@ app.post('/api/download', async (req, res) => {
         args.push('--proxy', formattedProxy);
     }
 
-    // Reactivar inyección de Cookies desde el archivo generado por la variable de entorno
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         console.log(
@@ -249,7 +242,7 @@ app.post('/api/download', async (req, res) => {
     });
 
     res.json({ jobId });
-};);
+});
 
 app.get('/api/progress/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
