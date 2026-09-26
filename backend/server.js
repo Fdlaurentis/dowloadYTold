@@ -133,7 +133,7 @@ app.post('/api/download', async (req, res) => {
         '--newline',
         '--no-playlist',
         '--extractor-args',
-        'youtube:player_client=ios,android,web',
+        'youtube:player_client=ios,android,tv',
     ];
 
     // Inyectar Proxy de Webshare si existe la variable
@@ -145,14 +145,14 @@ app.post('/api/download', async (req, res) => {
         args.push('--proxy', formattedProxy);
     }
 
-    // Inyectar Cookies de sesión si existe el archivo generado
+    /*Inyectar Cookies de sesión si existe el archivo generado
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         console.log(
             `[${getTimestamp()}] 🍪 Usando archivo de cookies de sesión...`,
         );
         args.push('--cookies', cookiesPath);
-    }
+    }*/
 
     if (format === 'mp3') {
         args.push(
