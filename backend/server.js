@@ -5,15 +5,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Lista de instancias públicas comunitarias de Cobalt
+const COBALT_INSTANCES = [
+    'https://cobalt-api.kwiatek.xyz/',
+    'https://api.cobalt.tools/',
+];
+
 app.get('/', (req, res) => {
-    res.send('Servidor Backend (Cobalt v10 API) activo.');
+    res.send('Servidor Backend (Cobalt Multi-Instance API) activo.');
 });
 
 app.post('/api/download', async (req, res) => {
     const { url, format, resolution = '480' } = req.body;
 
     console.log(`\n==================================================`);
-    console.log(`🚀 NUEVA SOLICITUD (Cobalt v10 API)`);
+    console.log(`🚀 NUEVA SOLICITUD (Cobalt API)`);
     console.log(` -> URL: ${url}`);
     console.log(` -> Formato: ${format}`);
     console.log(`==================================================`);
@@ -22,51 +28,66 @@ app.post('/api/download', async (req, res) => {
         return res.status(400).json({ error: 'Ingresa un enlace válido.' });
     }
 
-    try {
-        const isAudioOnly = format === 'mp3';
+    const isAudioOnly = format === 'mp3';
+    const requestBody = {
+        url: url,
+        videoQuality: resolution,
+        downloadMode: isAudioOnly ? 'audio' : 'auto',
+        audioFormat: 'mp3',
+        youtubeVideoCodec: 'h264',
+    };
 
-        // Configuración con especificación v10
-        const requestBody = {
-            url: url,
-            videoQuality: resolution,
-            downloadMode: isAudioOnly ? 'audio' : 'auto',
-            audioFormat: 'mp3',
-            youtubeVideoCodec: 'h264', // Forzar códec H.264 nativamente
-        };
+    // Iterar sobre las instancias hasta que una devuelva el enlace
+    for (const instance of COBALT_INSTANCES) {
+        try {
+            console.log(`📡 Probando con instancia: ${instance}`);
+            const response = await fetch(instance, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
 
-        // Apuntar al endpoint v10 (https://api.cobalt.tools/)
-        const response = await fetch('https://api.cobalt.tools/', {
-            method: 'POST',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody),
-        });
+            const data = await response.json();
 
-        const data = await response.json();
-
-        // En v10, las descargas exitosas devuelven status "tunnel" o "redirect" con la URL
-        if (
-            data &&
-            (data.status === 'tunnel' || data.status === 'redirect') &&
-            data.url
-        ) {
-            console.log(`✅ Enlace v10 generado con éxito:`, data.url);
-            return res.json({ downloadUrl: data.url });
-        } else {
-            console.error('❌ Respuesta de error en Cobalt v10:', data);
-            const errorDetail =
-                data.text ||
-                'La API de extracción no pudo procesar este enlace.';
-            return res.status(500).json({ error: errorDetail });
+            // Validar si la instancia entregó una URL válida
+            if (
+                data &&
+                (data.status === 'tunnel' ||
+                    data.status === 'redirect' ||
+                    data.status === 'picker') &&
+                data.url
+            ) {
+                console.log(
+                    `✅ Enlace generado con éxito desde ${instance}:`,
+                    data.url,
+                );
+                return res.json({ downloadUrl: data.url });
+            } else if (data && data.url) {
+                console.log(
+                    `✅ Enlace generado con éxito desde ${instance}:`,
+                    data.url,
+                );
+                return res.json({ downloadUrl: data.url });
+            } else {
+                console.warn(
+                    `⚠️ La instancia ${instance} devolvió respuesta no válida:`,
+                    data,
+                );
+            }
+        } catch (err) {
+            console.warn(
+                `⚠️ Error de red al conectar con ${instance}:`,
+                err.message,
+            );
         }
-    } catch (err) {
-        console.error(`❌ Error al conectar con Cobalt:`, err.message);
-        return res
-            .status(500)
-            .json({ error: 'Error interno del servidor de extracción.' });
     }
+
+    return res.status(500).json({
+        error: 'No se pudo procesar la descarga en las instancias disponibles. Inténtalo de nuevo en unos momentos.',
+    });
 });
 
 const PORT = process.env.PORT || 5000;
