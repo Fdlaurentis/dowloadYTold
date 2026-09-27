@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     Platform,
     Modal,
+    Linking, // 👈 Agregado para abrir enlaces en dispositivos móviles
 } from 'react-native';
 import { styles } from './App.styles';
 
@@ -47,8 +48,8 @@ export default function App() {
         }
 
         setLoading(true);
-        setProgress(0);
-        setStatusText('Conectando con el servidor...');
+        setProgress(50);
+        setStatusText('Generando enlace con Cobalt API...');
 
         try {
             const response = await fetch(`${API_URL}/api/download`, {
@@ -63,13 +64,15 @@ export default function App() {
 
             const data = await response.json();
 
-            if (!response.ok || data.error) {
+            if (!response.ok || data.error || !data.downloadUrl) {
                 throw new Error(
                     data.error || 'Ocurrió un error al procesar la solicitud.',
                 );
             }
 
-            pollProgress(data.jobId);
+            setProgress(100);
+            setStatusText('¡Enlace generado! Iniciando descarga...');
+            triggerFileDownload(data.downloadUrl);
         } catch (error) {
             console.error('Error al iniciar descarga:', error);
             showAlert(
@@ -78,51 +81,15 @@ export default function App() {
                 'error',
             );
             setLoading(false);
+            setProgress(0);
         }
     };
 
-    const pollProgress = (jobId) => {
-        const interval = setInterval(async () => {
-            try {
-                const res = await fetch(`${API_URL}/api/progress/${jobId}`);
-                const jobData = await res.json();
-
-                if (res.ok && jobData) {
-                    setProgress(jobData.progress || 0);
-                    if (jobData.status) setStatusText(jobData.status);
-
-                    if (jobData.fileReady) {
-                        clearInterval(interval);
-                        setStatusText('¡Completado! Transfiriendo archivo...');
-                        triggerFileDownload(jobId);
-                    } else if (jobData.error) {
-                        clearInterval(interval);
-                        const errorMsg =
-                            jobData.errorMessage ||
-                            'Ocurrió un error inesperado al procesar el video.';
-                        showAlert('Falla en la Descarga', errorMsg, 'error');
-                        setLoading(false);
-                    }
-                }
-            } catch (err) {
-                console.error('Error consultando progreso:', err);
-                clearInterval(interval);
-                showAlert(
-                    'Error de Red',
-                    'Se perdió la conexión con el servidor durante el proceso.',
-                    'error',
-                );
-                setLoading(false);
-            }
-        }, 1000);
-    };
-
-    const triggerFileDownload = (jobId) => {
-        const fileUrl = `${API_URL}/api/file/${jobId}`;
-
+    const triggerFileDownload = (downloadUrl) => {
         if (Platform.OS === 'web') {
             const a = document.createElement('a');
-            a.href = fileUrl;
+            a.href = downloadUrl;
+            a.target = '_blank';
             a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
@@ -130,15 +97,17 @@ export default function App() {
 
             showAlert(
                 '¡Descarga Exitosa!',
-                'El archivo procesado ha comenzado a descargarse en tu navegador.',
+                'El enlace se ha procesado exitosamente y ha comenzado la descarga.',
                 'success',
             );
         } else {
-            showAlert(
-                '¡Descarga Lista!',
-                `Tu archivo está listo para descargar en:\n${fileUrl}`,
-                'success',
-            );
+            Linking.openURL(downloadUrl).catch(() => {
+                showAlert(
+                    '¡Descarga Lista!',
+                    `Tu archivo está listo. Abre este enlace:\n${downloadUrl}`,
+                    'success',
+                );
+            });
         }
 
         // Limpieza de estado y borrado de URL
