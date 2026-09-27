@@ -1,213 +1,69 @@
 const express = require('express');
 const cors = require('cors');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const ffmpegPath = require('ffmpeg-static');
-const { generate } = require('youtube-po-token-generator');
-
-const {
-    ensureYtDlp,
-    ytdlpPath,
-    downloadsDir,
-    getTimestamp,
-    startAutoCleaner,
-} = require('./utils/ytdlp');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-const jobs = {};
-
-startAutoCleaner();
-
-function sanitizeYoutubeUrl(rawUrl) {
-    try {
-        const parsed = new URL(rawUrl.trim());
-        if (parsed.hostname.includes('youtu.be')) {
-            const videoId = parsed.pathname.slice(1).split('/')[0];
-            if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
-        }
-        const videoId = parsed.searchParams.get('v');
-        if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
-    } catch (e) {}
-    return rawUrl ? rawUrl.split('&')[0] : '';
-}
-
 app.get('/', (req, res) => {
-    res.send('Servidor Backend H.264 Downloader activo.');
+    res.send('Servidor Backend (Cobalt API) activo y ultra ligero.');
 });
 
 app.post('/api/download', async (req, res) => {
     const { url, format, resolution = '480' } = req.body;
-    const cleanUrl = sanitizeYoutubeUrl(url);
 
     console.log(`\n==================================================`);
-    console.log(`[${getTimestamp()}] 🚀 NUEVA SOLICITUD RECIBIDA`);
-    console.log(` -> URL: ${cleanUrl}`);
+    console.log(`🚀 NUEVA SOLICITUD (Vía Cobalt API)`);
+    console.log(` -> URL: ${url}`);
+    console.log(` -> Formato: ${format}`);
     console.log(`==================================================`);
 
-    if (!cleanUrl || !cleanUrl.includes('youtube.com/watch?v=')) {
-        return res
-            .status(400)
-            .json({ error: 'Ingresa un enlace válido de video de YouTube.' });
-    }
-
-    // 1. Generar PO Token dinámico para saltar BotGuard en la Nube
-    let poTokenData = null;
-    try {
-        console.log(`[${getTimestamp()}] 🔑 Generando PO Token dinámico...`);
-        poTokenData = await generate();
-        console.log(`[${getTimestamp()}] ✅ PO Token generado con éxito.`);
-    } catch (err) {
-        console.warn(
-            `[${getTimestamp()}] ⚠️ No se pudo generar PO Token, intentando respaldo estándar:`,
-            err.message,
-        );
+    if (!url) {
+        return res.status(400).json({ error: 'Ingresa un enlace válido.' });
     }
 
     try {
-        await ensureYtDlp();
-    } catch (err) {
-        return res.status(500).json({ error: 'Error interno en el servidor' });
-    }
+        const isAudioOnly = format === 'mp3';
 
-    const jobId = Date.now().toString();
-    const ext = format === 'mp3' ? 'mp3' : 'mp4';
-    const outputTemplate = path.join(
-        downloadsDir,
-        `${jobId}_%(title)s.%(ext)s`,
-    );
+        // Parámetros que exige la API de Cobalt
+        const requestBody = {
+            url: url,
+            vQuality: resolution,
+            isAudioOnly: isAudioOnly,
+            aFormat: isAudioOnly ? 'mp3' : 'best', // Si es mp3, fuerza el formato de audio
+        };
 
-    jobs[jobId] = {
-        progress: 0,
-        status: 'Iniciando...',
-        fileReady: false,
-        ext,
-        errorLog: '',
-        errorMessage: '',
-    };
+        // Consumir la API pública
+        const response = await fetch('https://api.cobalt.tools/api/json', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+        });
 
-    const args = [
-        '--ffmpeg-location',
-        ffmpegPath,
-        '--newline',
-        '--no-playlist',
-    ];
+        const data = await response.json();
 
-    // 2. Inyectar PO Token y Visitor Data en los argumentos de yt-dlp
-    if (poTokenData && poTokenData.poToken && poTokenData.visitorData) {
-        args.push(
-            '--extractor-args',
-            `youtube:po_token=web+${poTokenData.poToken};visitor_data=${poTokenData.visitorData}`,
-        );
-    } else {
-        args.push('--extractor-args', 'youtube:player_client=tv,mweb');
-    }
-
-    // 3. Inyectar Proxy de Webshare si existe
-    if (process.env.PROXY_URL) {
-        args.push('--proxy', process.env.PROXY_URL.trim());
-    }
-
-    if (format === 'mp3') {
-        args.push(
-            '-x',
-            '--audio-format',
-            'mp3',
-            '--audio-quality',
-            '0',
-            '-o',
-            outputTemplate,
-            cleanUrl,
-        );
-    } else {
-        const targetRes = ['360', '480', '720'].includes(resolution)
-            ? resolution
-            : '480';
-        args.push(
-            '-f',
-            `b[height<=${targetRes}][ext=mp4]/bestvideo[height<=${targetRes}]+bestaudio/best[height<=${targetRes}]/best`,
-            '--merge-output-format',
-            'mp4',
-            '--postprocessor-args',
-            'VideoConvertor:-c:v libx264 -preset ultrafast -pix_fmt yuv420p -threads 2 -c:a aac -b:a 128k',
-            '-o',
-            outputTemplate,
-            cleanUrl,
-        );
-    }
-
-    const childProcess = spawn(ytdlpPath, args);
-
-    childProcess.stderr.on('data', (data) => {
-        const logLine = data.toString().trim();
-        if (logLine) {
-            jobs[jobId].errorLog += ' ' + logLine;
-            console.log(
-                `[${getTimestamp()}] [Job ${jobId}] ⚠️ Details: ${logLine}`,
-            );
-        }
-    });
-
-    childProcess.stdout.on('data', (data) => {
-        const text = data.toString();
-        const match = text.match(/(\d{1,3}\.\d)%/);
-
-        if (match) {
-            const percent = parseFloat(match[1]);
-            jobs[jobId].progress = percent;
-            jobs[jobId].status = `Descargando: ${percent}%`;
-        } else if (
-            text.includes('[VideoConvertor]') ||
-            text.includes('[Merger]')
-        ) {
-            jobs[jobId].status = 'Convirtiendo / Ensamblando archivo MP4...';
-            jobs[jobId].progress = 95;
-        }
-    });
-
-    childProcess.on('close', (code) => {
-        const files = fs.readdirSync(downloadsDir);
-        const downloadedFile = files.find((file) => file.startsWith(jobId));
-
-        if (code === 0 && downloadedFile) {
-            jobs[jobId].progress = 100;
-            jobs[jobId].status = 'Completado';
-            jobs[jobId].fileReady = true;
-            jobs[jobId].outputPath = path.join(downloadsDir, downloadedFile);
-            jobs[jobId].downloadName = downloadedFile.replace(`${jobId}_`, '');
+        // Cobalt responde con un JSON que contiene un atributo "url" con el enlace final
+        if (data && data.url) {
+            console.log(`✅ Enlace generado con éxito`);
+            return res.json({ downloadUrl: data.url });
         } else {
-            jobs[jobId].status = 'Error en el proceso';
-            jobs[jobId].errorMessage = 'No se pudo procesar la descarga.';
-            jobs[jobId].error = true;
+            console.error('❌ Respuesta inesperada de Cobalt:', data);
+            return res
+                .status(500)
+                .json({ error: 'La API de extracción falló.' });
         }
-    });
-
-    res.json({ jobId });
-});
-
-app.get('/api/progress/:jobId', (req, res) => {
-    const job = jobs[req.params.jobId];
-    if (!job) return res.status(404).json({ error: 'Trabajo no encontrado' });
-    res.json(job);
-});
-
-app.get('/api/file/:jobId', (req, res) => {
-    const job = jobs[req.params.jobId];
-    if (!job || !job.fileReady) {
-        return res.status(400).json({ error: 'El archivo aún no está listo' });
+    } catch (err) {
+        console.error(`❌ Error al conectar con Cobalt:`, err.message);
+        return res
+            .status(500)
+            .json({ error: 'Error interno del servidor de extracción.' });
     }
-
-    res.download(job.outputPath, job.downloadName, () => {
-        if (fs.existsSync(job.outputPath)) fs.unlinkSync(job.outputPath);
-        delete jobs[req.params.jobId];
-    });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`\n🟢 Servidor Backend corriendo en puerto ${PORT}\n`);
+    console.log(`\n🟢 Servidor Backend ligero corriendo en puerto ${PORT}\n`);
 });
