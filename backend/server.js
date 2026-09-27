@@ -4,9 +4,10 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const ffmpegPath = require('ffmpeg-static');
+const { generate } = require('youtube-po-token-generator');
+
 const {
     ensureYtDlp,
-    ensureCookies,
     ytdlpPath,
     downloadsDir,
     getTimestamp,
@@ -20,11 +21,8 @@ app.use(express.json());
 
 const jobs = {};
 
-// Iniciar limpiador automático y generar cookies desde variable de entorno
 startAutoCleaner();
-ensureCookies();
 
-// Sanitizador estricto de URLs de YouTube
 function sanitizeYoutubeUrl(rawUrl) {
     try {
         const parsed = new URL(rawUrl.trim());
@@ -33,46 +31,9 @@ function sanitizeYoutubeUrl(rawUrl) {
             if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
         }
         const videoId = parsed.searchParams.get('v');
-        if (videoId) {
-            return `https://www.youtube.com/watch?v=${videoId}`;
-        }
-    } catch (e) {
-        // Fallback
-    }
+        if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+    } catch (e) {}
     return rawUrl ? rawUrl.split('&')[0] : '';
-}
-
-// Clasificador de errores
-function parseYtDlpError(rawErrorLog) {
-    const log = rawErrorLog.toLowerCase();
-
-    if (
-        log.includes("confirm you're not a bot") ||
-        log.includes('bot') ||
-        log.includes('429') ||
-        log.includes('sign in')
-    ) {
-        return '🔒 Bloqueo de YouTube: La plataforma detectó tráfico inusual. Intenta de nuevo en unos minutos.';
-    }
-    if (
-        log.includes('proxy') ||
-        log.includes('connection') ||
-        log.includes('timed out') ||
-        log.includes('econnrefused') ||
-        log.includes('unable to download webpage')
-    ) {
-        return '🌐 Error de Conexión: Falla de comunicación con el proxy o con los servidores de YouTube.';
-    }
-    if (
-        log.includes('private video') ||
-        log.includes('unavailable') ||
-        log.includes('copyright') ||
-        log.includes('members-only')
-    ) {
-        return '🚫 Video no disponible: El video es privado, fue borrado o requiere membresía.';
-    }
-
-    return '❌ Error al procesar el video: No se pudo completar la conversión.';
 }
 
 app.get('/', (req, res) => {
@@ -85,9 +46,7 @@ app.post('/api/download', async (req, res) => {
 
     console.log(`\n==================================================`);
     console.log(`[${getTimestamp()}] 🚀 NUEVA SOLICITUD RECIBIDA`);
-    console.log(` -> URL Original: ${url}`);
-    console.log(` -> URL Sanitizada: ${cleanUrl}`);
-    console.log(` -> Formato: ${format ? format.toUpperCase() : 'MP4'}`);
+    console.log(` -> URL: ${cleanUrl}`);
     console.log(`==================================================`);
 
     if (!cleanUrl || !cleanUrl.includes('youtube.com/watch?v=')) {
@@ -96,14 +55,22 @@ app.post('/api/download', async (req, res) => {
             .json({ error: 'Ingresa un enlace válido de video de YouTube.' });
     }
 
+    // 1. Generar PO Token dinámico para saltar BotGuard en la Nube
+    let poTokenData = null;
+    try {
+        console.log(`[${getTimestamp()}] 🔑 Generando PO Token dinámico...`);
+        poTokenData = await generate();
+        console.log(`[${getTimestamp()}] ✅ PO Token generado con éxito.`);
+    } catch (err) {
+        console.warn(
+            `[${getTimestamp()}] ⚠️ No se pudo generar PO Token, intentando respaldo estándar:`,
+            err.message,
+        );
+    }
+
     try {
         await ensureYtDlp();
-        ensureCookies();
     } catch (err) {
-        console.error(
-            `[${getTimestamp()}] ❌ Error inicializando yt-dlp/cookies:`,
-            err,
-        );
         return res.status(500).json({ error: 'Error interno en el servidor' });
     }
 
@@ -128,24 +95,21 @@ app.post('/api/download', async (req, res) => {
         ffmpegPath,
         '--newline',
         '--no-playlist',
-        '--extractor-args',
-        'youtube:player_client=tv,web',
     ];
 
-    if (process.env.PROXY_URL) {
-        const formattedProxy = process.env.PROXY_URL.trim();
-        console.log(
-            `[${getTimestamp()}] 🛡️ Usando Proxy para evadir bloqueo...`,
+    // 2. Inyectar PO Token y Visitor Data en los argumentos de yt-dlp
+    if (poTokenData && poTokenData.poToken && poTokenData.visitorData) {
+        args.push(
+            '--extractor-args',
+            `youtube:po_token=web+${poTokenData.poToken};visitor_data=${poTokenData.visitorData}`,
         );
-        args.push('--proxy', formattedProxy);
+    } else {
+        args.push('--extractor-args', 'youtube:player_client=tv,mweb');
     }
 
-    const cookiesPath = path.join(__dirname, 'cookies.txt');
-    if (fs.existsSync(cookiesPath)) {
-        console.log(
-            `[${getTimestamp()}] 🍪 Usando archivo de cookies de sesión...`,
-        );
-        args.push('--cookies', cookiesPath);
+    // 3. Inyectar Proxy de Webshare si existe
+    if (process.env.PROXY_URL) {
+        args.push('--proxy', process.env.PROXY_URL.trim());
     }
 
     if (format === 'mp3') {
@@ -178,15 +142,14 @@ app.post('/api/download', async (req, res) => {
 
     const childProcess = spawn(ytdlpPath, args);
 
-    childProcess.on('error', (err) => {
-        console.error(
-            `[${getTimestamp()}] [Job ${jobId}] 💥 Error en proceso hijo:`,
-            err,
-        );
-        jobs[jobId].status = 'Error de ejecución en el servidor';
-        jobs[jobId].errorMessage =
-            '🌐 Error de Conexión: Falla interna al ejecutar el proceso.';
-        jobs[jobId].error = true;
+    childProcess.stderr.on('data', (data) => {
+        const logLine = data.toString().trim();
+        if (logLine) {
+            jobs[jobId].errorLog += ' ' + logLine;
+            console.log(
+                `[${getTimestamp()}] [Job ${jobId}] ⚠️ Details: ${logLine}`,
+            );
+        }
     });
 
     childProcess.stdout.on('data', (data) => {
@@ -206,37 +169,19 @@ app.post('/api/download', async (req, res) => {
         }
     });
 
-    childProcess.stderr.on('data', (data) => {
-        const logLine = data.toString().trim();
-        if (logLine) {
-            jobs[jobId].errorLog += ' ' + logLine;
-            console.log(
-                `[${getTimestamp()}] [Job ${jobId}] ⚠️ Details: ${logLine}`,
-            );
-        }
-    });
-
     childProcess.on('close', (code) => {
         const files = fs.readdirSync(downloadsDir);
         const downloadedFile = files.find((file) => file.startsWith(jobId));
 
         if (code === 0 && downloadedFile) {
-            console.log(
-                `[${getTimestamp()}] [Job ${jobId}] ✅ Descarga exitosa.`,
-            );
             jobs[jobId].progress = 100;
             jobs[jobId].status = 'Completado';
             jobs[jobId].fileReady = true;
             jobs[jobId].outputPath = path.join(downloadsDir, downloadedFile);
             jobs[jobId].downloadName = downloadedFile.replace(`${jobId}_`, '');
         } else {
-            const parsedError = parseYtDlpError(jobs[jobId].errorLog);
-            console.error(
-                `[${getTimestamp()}] [Job ${jobId}] ❌ Error (${code}): ${parsedError}`,
-            );
-
             jobs[jobId].status = 'Error en el proceso';
-            jobs[jobId].errorMessage = parsedError;
+            jobs[jobId].errorMessage = 'No se pudo procesar la descarga.';
             jobs[jobId].error = true;
         }
     });
