@@ -6,14 +6,14 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-    res.send('Servidor Backend (Cobalt API) activo y ultra ligero.');
+    res.send('Servidor Backend (Cobalt v10 API) activo.');
 });
 
 app.post('/api/download', async (req, res) => {
     const { url, format, resolution = '480' } = req.body;
 
     console.log(`\n==================================================`);
-    console.log(`🚀 NUEVA SOLICITUD (Vía Cobalt API)`);
+    console.log(`🚀 NUEVA SOLICITUD (Cobalt v10 API)`);
     console.log(` -> URL: ${url}`);
     console.log(` -> Formato: ${format}`);
     console.log(`==================================================`);
@@ -25,16 +25,17 @@ app.post('/api/download', async (req, res) => {
     try {
         const isAudioOnly = format === 'mp3';
 
-        // Parámetros que exige la API de Cobalt
+        // Configuración con especificación v10
         const requestBody = {
             url: url,
-            vQuality: resolution,
-            isAudioOnly: isAudioOnly,
-            aFormat: isAudioOnly ? 'mp3' : 'best', // Si es mp3, fuerza el formato de audio
+            videoQuality: resolution,
+            downloadMode: isAudioOnly ? 'audio' : 'auto',
+            audioFormat: 'mp3',
+            youtubeVideoCodec: 'h264', // Forzar códec H.264 nativamente
         };
 
-        // Consumir la API pública
-        const response = await fetch('https://api.cobalt.tools/api/json', {
+        // Apuntar al endpoint v10 (https://api.cobalt.tools/)
+        const response = await fetch('https://api.cobalt.tools/', {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
@@ -45,15 +46,20 @@ app.post('/api/download', async (req, res) => {
 
         const data = await response.json();
 
-        // Cobalt responde con un JSON que contiene un atributo "url" con el enlace final
-        if (data && data.url) {
-            console.log(`✅ Enlace generado con éxito`);
+        // En v10, las descargas exitosas devuelven status "tunnel" o "redirect" con la URL
+        if (
+            data &&
+            (data.status === 'tunnel' || data.status === 'redirect') &&
+            data.url
+        ) {
+            console.log(`✅ Enlace v10 generado con éxito:`, data.url);
             return res.json({ downloadUrl: data.url });
         } else {
-            console.error('❌ Respuesta inesperada de Cobalt:', data);
-            return res
-                .status(500)
-                .json({ error: 'La API de extracción falló.' });
+            console.error('❌ Respuesta de error en Cobalt v10:', data);
+            const errorDetail =
+                data.text ||
+                'La API de extracción no pudo procesar este enlace.';
+            return res.status(500).json({ error: errorDetail });
         }
     } catch (err) {
         console.error(`❌ Error al conectar con Cobalt:`, err.message);
